@@ -1,0 +1,8 @@
+bash
+   git init
+   git add .
+   git commit -m "Detector de Objetos Android"
+   git branch -M main
+   git remote add origin https://github.com/vhes2k2k2k/objdetect.git
+
+   git push -u origin main
