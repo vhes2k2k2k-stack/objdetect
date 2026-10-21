@@ -1,0 +1,10 @@
+# Dependencias principales para el Detector de Objetos
+opencv-python>=4.8.0
+numpy>=1.23.0
+pillow>=9.0.0
+flask>=2.3.0
+
+# Dependencias para compilar la aplicación Kivy en Android (usado por Buildozer / p4a)
+# kivy==2.3.0
+# buildozer
+# cython<3.0.0

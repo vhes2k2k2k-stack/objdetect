@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Detector de Objetos AI</title>
+  
+  <!-- Configuración PWA para Android -->
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#121826">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" type="image/png" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #0b0f19;
+      color: #fff;
+    }
+
+    #app-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* Video y Canvas de Detección */
+    #video-wrapper {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      z-index: 1;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    canvas#overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* HUD Superior */
+    .hud-top {
+      position: relative;
+      z-index: 10;
+      padding: 16px 16px 8px;
+      background: linear-gradient(180deg, rgba(11, 15, 25, 0.85) 0%, rgba(11, 15, 25, 0) 100%);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .badge-fps {
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid #10b981;
+      color: #10b981;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-objects {
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid #3b82f6;
+      color: #60a5fa;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .objects-summary {
+      background: rgba(17, 24, 39, 0.75);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 8px 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      color: #f3f4f6;
+      min-height: 22px;
+      display: flex;
+      align-items: center;
+    }
+
+    /* Panel Inferior de Controles */
+    .hud-bottom {
+      position: relative;
+      z-index: 10;
+      padding: 12px 16px 20px;
+      background: linear-gradient(0deg, rgba(11, 15, 25, 0.95) 0%, rgba(11, 15, 25, 0.7) 70%, rgba(11, 15, 25, 0) 100%);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .slider-box {
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 8px 14px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .slider-box label {
+      font-size: 13px;
+      color: #9ca3af;
+      white-space: nowrap;
+    }
+
+    input[type=range] {
+      flex: 1;
+      accent-color: #3b82f6;
+      height: 6px;
+      border-radius: 4px;
+    }
+
+    .buttons-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .btn-action {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      padding: 10px 4px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-action:active {
+      transform: scale(0.95);
+      background: rgba(51, 65, 85, 0.95);
+    }
+
+    .btn-action.active {
+      background: #2563eb;
+      border-color: #60a5fa;
+    }
+
+    /* Modal o botón de instalación PWA */
+    #pwa-install-banner {
+      display: none;
+      position: absolute;
+      top: 80px;
+      left: 16px;
+      right: 16px;
+      z-index: 20;
+      background: #1e293b;
+      border: 1px solid #3b82f6;
+      padding: 12px 16px;
+      border-radius: 14px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #pwa-install-banner button {
+      background: #2563eb;
+      border: none;
+      color: white;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="app-container">
+    <!-- Vista de Cámara en Vivo -->
+    <div id="video-wrapper">
+      <video id="camera" playsinline autoplay muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+
+    <!-- Banner de Instalación en Android -->
+    <div id="pwa-install-banner">
+      <div>
+        <div style="font-weight: 600; font-size: 14px;">📲 Instalar en tu Android</div>
+        <div style="font-size: 12px; color: #94a3b8;">Agrega la app a tu pantalla de inicio</div>
+      </div>
+      <button id="btn-install-pwa">Instalar</button>
+    </div>
+
+    <!-- HUD Superior -->
+    <div class="hud-top">
+      <div class="status-row">
+        <div class="badge-fps" id="fps-badge">FPS: --</div>
+        <div class="badge-objects" id="objects-count-badge">0 Objetos</div>
+      </div>
+      <div class="objects-summary" id="objects-summary-text">
+        Apuntando cámara hacia los objetos...
+      </div>
+    </div>
+
+    <!-- Panel Inferior de Controles -->
+    <div class="hud-bottom">
+      <div class="slider-box">
+        <label for="conf-range">Confianza: <span id="conf-val">35%</span></label>
+        <input type="range" id="conf-range" min="15" max="90" value="35">
+      </div>
+
+      <div class="buttons-grid">
+        <button class="btn-action" id="btn-pause">
+          <span style="font-size: 18px;">⏯</span>
+          <span id="pause-text">Pausar</span>
+        </button>
+        <button class="btn-action" id="btn-flip">
+          <span style="font-size: 18px;">🔄</span>
+          <span>Cámara</span>
+        </button>
+        <button class="btn-action" id="btn-voice">
+          <span style="font-size: 18px;">🔊</span>
+          <span id="voice-text">Voz OFF</span>
+        </button>
+        <button class="btn-action" id="btn-lang">
+          <span style="font-size: 18px;">🌐</span>
+          <span id="lang-text">ES</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Variables de Estado
+    let video = document.getElementById('camera');
+    let canvas = document.getElementById('overlay');
+    let ctx = canvas.getContext('2d');
+    let fpsBadge = document.getElementById('fps-badge');
+    let objCountBadge = document.getElementById('objects-count-badge');
+    let summaryText = document.getElementById('objects-summary-text');
+    let confRange = document.getElementById('conf-range');
+    let confVal = document.getElementById('conf-val');
+
+    let currentFacingMode = 'environment'; // 'environment' = trasera, 'user' = frontal
+    let isPaused = false;
+    let voiceEnabled = false;
+    let currentLang = 'es';
+    let confidenceThreshold = 0.35;
+    
+    let isProcessing = false;
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+    let fps = 0;
+    let lastSpokenTime = 0;
+    let lastSpokenObjects = '';
+
+    // Inicializar Cámara
+    async function startCamera() {
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+      }
+      try {
+        const constraints = {
+          video: {
+            facingMode: { ideal: currentFacingMode },
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          },
+          audio: false
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        await video.play();
+        adjustCanvasSize();
+      } catch (err) {
+        console.error("Error al acceder a la cámara:", err);
+        summaryText.innerText = "Error: Por favor conceda permiso de cámara.";
+      }
+    }
+
+    function adjustCanvasSize() {
+      canvas.width = video.videoWidth || window.innerWidth;
+      canvas.height = video.videoHeight || window.innerHeight;
+    }
+
+    video.addEventListener('loadedmetadata', adjustCanvasSize);
+    window.addEventListener('resize', adjustCanvasSize);
+
+    // Bucle de Detección en Tiempo Real
+    async function processDetection() {
+      if (isPaused || isProcessing || !video.videoWidth) {
+        requestAnimationFrame(processDetection);
+        return;
+      }
+
+      isProcessing = true;
+      const now = performance.now();
+
+      // Capturar cuadro actual en un canvas temporal
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = 416;
+      tempCanvas.height = 416;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(video, 0, 0, 416, 416);
+
+      const base64Data = tempCanvas.toDataURL('image/jpeg', 0.65).split(',')[1];
+
+      try {
+        const response = await fetch('/detect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: base64Data,
+            threshold: confidenceThreshold,
+            lang: currentLang,
+            orig_w: canvas.width,
+            orig_h: canvas.height
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          renderDetections(data.detections || []);
+        }
+      } catch (err) {
+        console.error("Error en detección:", err);
+      }
+
+      // Cálculo de FPS
+      frameCount++;
+      if (now - lastFrameTime >= 1000) {
+        fps = Math.round((frameCount * 1000) / (now - lastFrameTime));
+        fpsBadge.innerText = `FPS: ${fps}`;
+        frameCount = 0;
+        lastFrameTime = now;
+      }
+
+      isProcessing = false;
+      requestAnimationFrame(processDetection);
+    }
+
+    // Dibujar Cajas y Etiquetas en Canvas
+    function renderDetections(detections) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      objCountBadge.innerText = `${detections.length} Objetos`;
+
+      if (detections.length === 0) {
+        summaryText.innerText = "Sin objetos identificados al frente";
+        return;
+      }
+
+      const counts = {};
+      detections.forEach(det => {
+        counts[det.label] = (counts[det.label] || 0) + 1;
+        const [x1, y1, x2, y2] = det.box;
+        const color = `rgb(${det.color[2]}, ${det.color[1]}, ${det.color[0]})`; // BGR a RGB
+
+        // Caja
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+        // Insignia de Texto
+        const text = `${det.label} ${Math.round(det.confidence * 100)}%`;
+        ctx.font = "bold 14px sans-serif";
+        const textMetrics = ctx.measureText(text);
+        const textWidth = textMetrics.width;
+
+        ctx.fillStyle = color;
+        ctx.fillRect(x1, Math.max(0, y1 - 24), textWidth + 12, 24);
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(text, x1 + 6, Math.max(16, y1 - 7));
+      });
+
+      // Actualizar texto resumen
+      const summaryList = Object.entries(counts).map(([label, count]) => `${count} ${label}`);
+      const summaryStr = "Frente a ti: " + summaryList.join(", ");
+      summaryText.innerText = summaryStr;
+
+      // Lectura en Voz Alta (TTS)
+      if (voiceEnabled && window.speechSynthesis) {
+        const now = Date.now();
+        if (now - lastSpokenTime > 3000 && summaryStr !== lastSpokenObjects) {
+          lastSpokenTime = now;
+          lastSpokenObjects = summaryStr;
+          const utterance = new SpeechSynthesisUtterance(summaryList.join(", "));
+          utterance.lang = currentLang === 'es' ? 'es-ES' : 'en-US';
+          window.speechSynthesis.speak(utterance);
+        }
+      }
+    }
+
+    // Controles de la Interfaz
+    document.getElementById('btn-pause').addEventListener('click', () => {
+      isPaused = !isPaused;
+      document.getElementById('pause-text').innerText = isPaused ? "Reanudar" : "Pausar";
+      document.getElementById('btn-pause').classList.toggle('active', isPaused);
+      if (isPaused) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        summaryText.innerText = "Detección Pausada";
+      }
+    });
+
+    document.getElementById('btn-flip').addEventListener('click', () => {
+      currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+      startCamera();
+    });
+
+    document.getElementById('btn-voice').addEventListener('click', () => {
+      voiceEnabled = !voiceEnabled;
+      document.getElementById('voice-text').innerText = voiceEnabled ? "Voz ON" : "Voz OFF";
+      document.getElementById('btn-voice').classList.toggle('active', voiceEnabled);
+    });
+
+    document.getElementById('btn-lang').addEventListener('click', () => {
+      currentLang = currentLang === 'es' ? 'en' : 'es';
+      document.getElementById('lang-text').innerText = currentLang.toUpperCase();
+    });
+
+    confRange.addEventListener('input', (e) => {
+      confidenceThreshold = e.target.value / 100;
+      confVal.innerText = `${e.target.value}%`;
+    });
+
+    // Soporte de Instalación PWA en Android
+    let deferredPrompt;
+    const installBanner = document.getElementById('pwa-install-banner');
+    const installBtn = document.getElementById('btn-install-pwa');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installBanner.style.display = 'flex';
+    });
+
+    installBtn.addEventListener('click', async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          installBanner.style.display = 'none';
+        }
+        deferredPrompt = null;
+      }
+    });
+
+    // Registrar Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw.js').catch(console.error);
+    }
+
+    // Iniciar
+    startCamera().then(() => {
+      requestAnimationFrame(processDetection);
+    });
+  </script>
+</body>
+</html>
